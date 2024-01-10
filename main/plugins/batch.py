@@ -67,46 +67,98 @@ async def _batch(event):
             try:
                 value = int(_range.text)
                 if value > 500:
-                    await conv.send_message("You can only get upto 100 files in a single batch.")
-                    return conv.cancel()
+                    awaiif value > 1000000:
+                    return await conv.send_message("You can only get upto 100000 files in a single batch.")
             except ValueError:
-                await conv.send_message("Range must be an integer!")
-                return conv.cancel()
-            batch.append(event.sender_id)
-            await run_batch(userbot, Bot, event.sender_id, _link, value) 
+                return await conv.send_message("Range must be an integer!")
+            for i in range(value):
+                ids.append(i)
+            s, r = await check(userbot, Bot, _link)
+            if s != True:
+                await conv.send_message(r)
+                return
+            batch.append(f'{event.chat_id}')
+            cd = await conv.send_message("**Batch process ongoing.**\n\nProcess completed: ", 
+                                    buttons=[[Button.inline("CANCEL❌", data="cancel")]])
+            co = await run_batch(userbot, Bot, event.chat_id, cd, _link) 
+            try: 
+                if co == -2:
+                    await Bot.send_message(event.chat_id, "Batch successfully completed!")
+                    await cd.edit(f"**Batch process ongoing.**\n\nProcess completed: {value} \n\n Batch successfully completed! ")
+            except:
+                await Bot.send_message(event.chat_id, "ERROR!\n\n maybe last msg didnt exist yet")
             conv.cancel()
+            ids.clear()
             batch.clear()
 
-async def run_batch(userbot, client, sender, link, _range):
-    for i in range(_range):
-        timer = 60
-        if i < 25:
+@gagan.on(events.callbackquery.CallbackQuery(data="cancel"))
+async def cancel(event):
+    ids.clear()
+    
+async def run_batch(userbot, client, chat_id, countdown, link):
+    for i in range(len(ids)):
+        timer = 6
+        if i < 250:
+            timer = 2
+        elif i < 1000 and i > 100:
+            timer = 3
+        elif i < 10000 and i > 1000:
+            timer = 4
+        elif i < 50000 and i > 10000:
             timer = 5
-        if i < 50 and i > 25:
+        elif i < 100000 and i > 50000:
+            timer = 6
+        elif i < 200000 and i > 100000:
+            timer = 8
+        elif i < 1000000: 
             timer = 10
-        if i < 100 and i > 50:
-            timer = 15
-        if not 't.me/c/' in link:
-            if i < 25:
-                timer = 2
-            else:
-                timer = 3
+        
+        if 't.me/c/' not in link:
+            timer = 1 if i < 500 else 2
         try: 
-            if not sender in batch:
-                await client.send_message(sender, "Batch completed.")
-                break
-        except Exception as e:
-            print(e)
-            await client.send_message(sender, "Batch completed.")
+            count_down = f"**Batch process ongoing.**\n\nProcess completed: {i+1}"
+            #a =ids[i]
+            try:
+                msg_id = int(link.split("/")[-1])
+            except ValueError:
+                if '?single' not in link:
+                    return await client.send_message(chat_id, "**Invalid Link! .**")
+                link_ = link.split("?single")[0]
+                msg_id = int(link_.split("/")[-1])
+            integer = msg_id + int(ids[i])
+            await get_bulk_msg(userbot, client, chat_id, link, integer)
+            protection = await client.send_message(chat_id, f"Sleeping for `{timer}` seconds to avoid Floodwaits and Protect account!")
+            await countdown.edit(count_down, 
+                                 buttons=[[Button.inline("CANCEL❌", data="cancel")]])
+            await asyncio.sleep(timer)
+            await protection.delete()
+        except IndexError as ie:
+            await client.send_message(chat_id, f" {i}  {ie}  \n\nBatch ended completed!")
+            await countdown.delete()
             break
-        try:
-            await get_bulk_msg(userbot, client, sender, link, i) 
         except FloodWait as fw:
-            if int(fw.x) > 299:
-                await client.send_message(sender, "Cancelling batch since you have floodwait more than 5 minutes.")
+            if int(fw.value) > 300:
+                await client.send_message(chat_id, f'You have floodwaits of {fw.value} seconds, cancelling batch') 
+                ids.clear()
                 break
-            await asyncio.sleep(fw.x + 5)
-            await get_bulk_msg(userbot, client, sender, link, i)
-        protection = await client.send_message(sender, f"Sleeping for {timer} seconds to avoid Floodwaits and Protect account!")
-        await asyncio.sleep(timer)
-        await protection.delete()
+            else:
+                fw_alert = await client.send_message(chat_id, f'Sleeping for {fw.value + 5} second(s) due to telegram flooodwait.')
+                ors = fw.value + 5
+                await asyncio.sleep(ors)
+                await fw_alert.delete()
+                try:
+                    await get_bulk_msg(userbot, client, chat_id, link, integer)
+                except Exception as e:
+                    #print(e)
+                    logger.info(e)
+                    if countdown.text != count_down:
+                        await countdown.edit(count_down, buttons=[[Button.inline("CANCEL❌", data="cancel")]])
+        except Exception as e:
+            #print(e)
+            logger.info(e)
+            await client.send_message(chat_id, f"An error occurred during cloning, batch will continue.\n\n**Error:** {str(e)}")
+            if countdown.text != count_down:
+                await countdown.edit(count_down, buttons=[[Button.inline("CANCEL❌", data="cancel")]])
+        n = i + 1
+        if n == len(ids):
+            return -2
